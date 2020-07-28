@@ -22,7 +22,7 @@ public class PrefixLogger {
      * @param prefix
      *         the prefix to print
      */
-    public PrefixLogger(final PrintStream logger, final String prefix) {
+    public PrefixLogger(PrintStream logger, final String prefix) {
         if (prefix.contains("[")) {
             this.toolName = prefix + " ";
         }

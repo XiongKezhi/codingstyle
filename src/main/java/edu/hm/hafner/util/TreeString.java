@@ -22,32 +22,28 @@ public final class TreeString implements Serializable {
     @Nullable
     private TreeString parent;
 
-    /** {@link #parent} + {@code label} is the string value of this node. */
     private char[] label;
 
     /**
      * Creates a new root {@link TreeString}.
      */
     TreeString() {
-        this(null, "");
-    }
+        this(null, ""); }
 
     /**
      * Creates a new {@link TreeString} with the given parent and suffix.
      *
      * @param parent
      *         the parent
-     * @param label
-     *         the suffix
      */
     @SuppressWarnings("NullAway")
-    TreeString(@Nullable final TreeString parent, final String label) {
+    TreeString(@Nullable TreeString parent, String label) {
         Ensure.that(parent == null || !label.isEmpty())
                 .isTrue("if there's a parent '%s', label '%s' can't be empty", parent, label);
 
         this.parent = parent;
         this.label = label.toCharArray(); // string created as a substring of another string can have a lot of garbage attached to it.
-    }
+        }
 
     String getLabel() {
         return new String(label);
@@ -63,30 +59,25 @@ public final class TreeString implements Serializable {
      *
      * @return the new node in the middle
      */
-    TreeString split(final String prefix) {
+    TreeString split(String prefix) {
         Ensure.that(getLabel().startsWith(prefix)).isTrue();
 
-        char[] suffix = new char[label.length - prefix.length()];
+        char[] suffix = new char[label.length - prefix.length()
+                ];
         System.arraycopy(label, prefix.length(), suffix, 0, suffix.length);
 
         TreeString middle = new TreeString(parent, prefix);
         label = suffix;
         parent = middle;
 
-        return middle;
-    }
+        return middle; }
 
     @VisibleForTesting
-    @Nullable
-    TreeString getParent() {
-        return parent;
-    }
+    TreeString getParent() { return parent; }
 
     /**
      * How many nodes do we have from the root to this node (including 'this' itself?). Thus depth of the root node is
      * 1.
-     *
-     * @return the depth
      */
     private int depth() {
         int i = 0;
@@ -110,8 +101,7 @@ public final class TreeString implements Serializable {
 
     @Override
     public int hashCode() {
-        return toString().hashCode();
-    }
+        return toString().hashCode(); }
 
     /**
      * Returns the full string representation.
@@ -131,15 +121,8 @@ public final class TreeString implements Serializable {
             buf.append(token);
         }
 
-        return buf.toString();
-    }
+        return buf.toString(); }
 
-    /**
-     * Interns {@link #label}.
-     *
-     * @param table
-     *         the table containing the existing strings
-     */
     void dedup(final Map<String, char[]> table) {
         String l = getLabel();
         char[] v = table.get(l);
@@ -152,19 +135,14 @@ public final class TreeString implements Serializable {
     }
 
     public boolean isBlank() {
-        return StringUtils.isBlank(toString());
-    }
+        return StringUtils.isBlank(toString()); }
 
     /**
      * Creates a {@link TreeString}. Useful if you need to create one-off {@link TreeString} without {@link
      * TreeStringBuilder}. Memory consumption is still about the same to {@code new String(string)}.
      *
-     * @param string
-     *         the tree string
-     *
      * @return the new {@link TreeString}
      */
     public static TreeString valueOf(final String string) {
-        return new TreeString(null, string);
-    }
+        return new TreeString(null, string); }
 }

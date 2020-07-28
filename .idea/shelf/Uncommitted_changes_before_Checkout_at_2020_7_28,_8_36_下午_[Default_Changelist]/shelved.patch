@@ -1,0 +1,1423 @@
+Index: src/main/java/edu/hm/hafner/util/TreeString.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>package edu.hm.hafner.util;\n\nimport java.io.Serializable;\nimport java.util.Map;\n\nimport org.apache.commons.lang3.StringUtils;\n\nimport edu.umd.cs.findbugs.annotations.Nullable;\n\n/**\n * {@link TreeString} is an alternative string representation that saves the memory when you have a large number of\n * strings that share common prefixes (such as various file names.)\n * <p>\n * {@link TreeString} can be built with {@link TreeStringBuilder}.\n *\n * @author Kohsuke Kawaguchi\n */\npublic final class TreeString implements Serializable {\n    private static final long serialVersionUID = 3621959682117480904L;\n\n    /** Parent node that represents the prefix. */\n    @Nullable\n    private TreeString parent;\n\n    /** {@link #parent} + {@code label} is the string value of this node. */\n    private char[] label;\n\n    /**\n     * Creates a new root {@link TreeString}.\n     */\n    TreeString() {\n        this(null, \"\"); }\n\n    /**\n     * Creates a new {@link TreeString} with the given parent and suffix.\n     *  @param parent\n     *         the parent\n     * @param label\n     */\n    @SuppressWarnings(\"NullAway\")\n    TreeString(@Nullable final TreeString parent, final String label) {\n        Ensure.that(parent == null || !label.isEmpty())\n                .isTrue(\"if there's a parent '%s', label '%s' can't be empty\", parent, label);\n\n        this.parent = parent;\n        this.label = label.toCharArray(); // string created as a substring of another string can have a lot of garbage attached to it.\n    }\n\n    String getLabel() {\n        return new String(label);\n    }\n\n    /**\n     * Inserts a new node between this node and its parent, and returns the newly inserted node.\n     * <p>\n     * This operation doesn't change the string representation of this node.\n     *\n     * @param prefix\n     *         the prefix to remove\n     *\n     * @return the new node in the middle\n     */\n    TreeString split(final String prefix) {\n        Ensure.that(getLabel().startsWith(prefix)).isTrue();\n\n        char[] suffix = new char[label.length - prefix.length()];\n        System.arraycopy(label, prefix.length(), suffix, 0, suffix.length);\n\n        TreeString middle = new TreeString(parent, prefix);\n        label = suffix;\n        parent = middle;\n\n        return middle;\n    }\n\n    @VisibleForTesting\n    TreeString getParent() {\n        return parent; }\n\n    /**\n     * How many nodes do we have from the root to this node (including 'this' itself?). Thus depth of the root node is\n     * 1.\n     *\n     * @return the depth\n     */\n    private int depth() {\n        int i = 0;\n        for (TreeString p = this; p != null; p = p.parent) {\n            i++;\n        }\n        return i;\n    }\n\n    @Override\n    public boolean equals(final Object o) {\n        if (this == o) {\n          return true;\n        }\n        if (o == null || getClass() != o.getClass()) {\n            return false; }\n        TreeString that = (TreeString) o;\n        return toString().equals(that.toString());\n    }\n\n    @Override\n    public int hashCode() {\n        return toString().hashCode(); }\n\n    /**\n     * Returns the full string representation.\n     */\n    @Override\n    public String toString() {\n        char[][] tokens = new char[depth()][];\n        int i = tokens.length;\n        int sz = 0;\n        for (TreeString p = this; p != null; p = p.parent) {\n            tokens[--i] = p.label;\n            sz += p.label.length;\n        }\n\n        StringBuilder buf = new StringBuilder(sz);\n        for (char[] token : tokens) {\n            buf.append(token);\n        }\n\n        return buf.toString(); }\n\n    /**\n     * Interns {@link #label}.\n     *\n     * @param table\n     *         the table containing the existing strings\n     */\n    void dedup(final Map<String, char[]> table) {\n        String l = getLabel();\n        char[] v = table.get(l);\n        if (v == null) {\n            table.put(l, label);\n        }\n        else {\n            label = v;\n        }\n    }\n\n    public boolean isBlank() {\n        return StringUtils.isBlank(toString()); }\n\n    /**\n     * Creates a {@link TreeString}. Useful if you need to create one-off {@link TreeString} without {@link\n     * TreeStringBuilder}. Memory consumption is still about the same to {@code new String(string)}.\n     *\n     * @param string\n     *         the tree string\n     *\n     * @return the new {@link TreeString}\n     */\n    public static TreeString valueOf(final String string) {\n        return new TreeString();}\n}\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/edu/hm/hafner/util/TreeString.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/main/java/edu/hm/hafner/util/TreeString.java	(date 1595937917415)
+@@ -60,7 +60,7 @@
+      *
+      * @return the new node in the middle
+      */
+-    TreeString split(final String prefix) {
++    TreeString split(String prefix) {
+         Ensure.that(getLabel().startsWith(prefix)).isTrue();
+ 
+         char[] suffix = new char[label.length - prefix.length()];
+Index: src/main/java/edu/hm/hafner/util/PrefixLogger.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>package edu.hm.hafner.util;\n\nimport java.io.PrintStream;\nimport java.util.Collection;\n\nimport com.google.errorprone.annotations.FormatMethod;\n\n/**\n * A simple logger that prefixes each message with the a given name.\n *\n * @author Ullrich Hafner\n */\npublic class PrefixLogger {\n    private final String toolName;\n    private final PrintStream delegate;\n\n    /**\n     * Creates a new {@link PrefixLogger}.\n     *\n     * @param logger\n     *         the logger to create\n     * @param prefix\n     *         the prefix to print\n     */\n    public PrefixLogger(final PrintStream logger, final String prefix) {\n        if (prefix.contains(\"[\")) {\n            this.toolName = prefix + \" \";\n        }\n        else {\n            this.toolName = String.format(\"[%s] \", prefix);\n        }\n        delegate = logger;\n    }\n\n    /**\n     * Logs the specified message.\n     *\n     * @param format\n     *         A <a href=\"../util/Formatter.html#syntax\">format string</a>\n     * @param args\n     *         Arguments referenced by the format specifiers in the format string.  If there are more arguments than\n     *         format specifiers, the extra arguments are ignored.  The number of arguments is variable and may be\n     *         zero.\n     */\n    @FormatMethod\n    public void log(final String format, final Object... args) {\n        print(String.format(format, args));\n    }\n\n    /**\n     * Logs the specified messages.\n     *\n     * @param lines\n     *         the messages to log\n     */\n    public void logEachLine(final Collection<String> lines) {\n        lines.forEach(this::print);\n    }\n\n    private void print(final String line) {\n        delegate.println(toolName + line);\n    }\n}\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/edu/hm/hafner/util/PrefixLogger.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/main/java/edu/hm/hafner/util/PrefixLogger.java	(date 1595938052026)
+@@ -22,7 +22,7 @@
+      * @param prefix
+      *         the prefix to print
+      */
+-    public PrefixLogger(final PrintStream logger, final String prefix) {
++    public PrefixLogger(PrintStream logger, final String prefix) {
+         if (prefix.contains("[")) {
+             this.toolName = prefix + " ";
+         }
+Index: pom.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\n<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd\">\n\n  <modelVersion>4.0.0</modelVersion>\n  <groupId>edu.hm.hafner</groupId>\n  <artifactId>codingstyle</artifactId>\n  <version>1.2.0-SNAPSHOT</version>\n\n  <packaging>jar</packaging>\n\n  <name>Java coding style</name>\n  <description>Provides all necessary resources for a Java project to enforce the coding style that I am using\n    in my lectures about software development at Munich University of Applied Sciences and in all of my\n    open source projects. It configures several static analysis tools for Maven and IntelliJ. Moreover,\n    it provides some sample classes that already use this style guide. This classes can be used as such but are not\n    required in this project. These classes also use some additional libraries that are included using the Maven\n    dependency mechanism. If the sample classes are deleted then the dependencies can be safely deleted, too.\n  </description>\n\n  <scm>\n    <connection>scm:git:git://github.com/uhafner/codingstyle.git</connection>\n    <developerConnection>scm:git:git@github.com:uhafner/codingstyle.git</developerConnection>\n    <url>https://github.com/uhafner/codingstyle</url>\n    <tag>HEAD</tag>\n  </scm>\n\n  <licenses>\n    <license>\n      <name>MIT license</name>\n      <comments>All source code is copyrighted by Ullrich Hafner and licensed under the MIT license.</comments>\n    </license>\n    <license>\n      <name>Creative Commons Attribution 4.0 International License</name>\n      <comments>All documents are licensed under a Creative Commons Attribution 4.0 International License</comments>\n    </license>\n  </licenses>\n\n  <developers>\n    <developer>\n      <name>Ullrich Hafner</name>\n      <id>uhafner</id>\n      <email>ullrich.hafner@hm.edu</email>\n      <organization>Munich University of Applied Sciences</organization>\n      <organizationUrl>https://www.hm.edu/en/index.en.html</organizationUrl>\n    </developer>\n  </developers>\n\n  <url>https://www.cs.hm.edu/die_fakultaet/ansprechpartner/professoren/hafner/index.de.html</url>\n\n  <properties>\n    <source.encoding>UTF-8</source.encoding>\n    <project.build.sourceEncoding>${source.encoding}</project.build.sourceEncoding>\n    <java.version>1.8</java.version>\n\n    <module.name>${project.groupId}.codingstyle</module.name>\n\n    <!-- Project Dependencies Configuration -->\n    <spotbugs.annotations>4.0.6</spotbugs.annotations>\n    <commons.lang.version>3.10</commons.lang.version>\n    <commons.io.version>2.7</commons.io.version>\n\n    <!-- Project Test Dependencies Configuration -->\n    <junit.version>5.6.2</junit.version>\n    <junit-platform-launcher.version>1.6.2</junit-platform-launcher.version>\n    <mockito.version>3.3.3</mockito.version>\n    <assertj.version>3.16.1</assertj.version>\n    <archunit.version>0.14.1</archunit.version>\n\n    <!-- Maven Plug-ins Configuration -->\n    <maven-deploy-plugin.version>3.0.0-M1</maven-deploy-plugin.version>\n    <maven-site-plugin.version>3.9.1</maven-site-plugin.version>\n    <maven-install-plugin.version>3.0.0-M1</maven-install-plugin.version>\n    <maven-clean-plugin.version>3.1.0</maven-clean-plugin.version>\n    <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>\n    <maven-javadoc-plugin.version>3.2.0</maven-javadoc-plugin.version>\n    <maven-source-plugin.version>3.2.1</maven-source-plugin.version>\n    <maven-resources-plugin.version>3.1.0</maven-resources-plugin.version>\n    <maven-buildhelper-plugin.version>3.0.0</maven-buildhelper-plugin.version>\n    <maven-surefire-plugin.version>3.0.0-M5</maven-surefire-plugin.version>\n    <maven-jar-plugin.version>3.2.0</maven-jar-plugin.version>\n    <maven-pmd-plugin.version>3.13.0</maven-pmd-plugin.version>\n    <pmd.version>6.25.0</pmd.version>\n    <maven-checkstyle-plugin.version>3.1.1</maven-checkstyle-plugin.version>\n    <checkstyle.version>8.34</checkstyle.version>\n    <spotbugs-maven-plugin.version>4.0.4</spotbugs-maven-plugin.version>\n    <findsecbugs-plugin.version>1.10.1</findsecbugs-plugin.version>\n    <jacoco-maven-plugin.version>0.8.5</jacoco-maven-plugin.version>\n    <maven-taglist-plugin.version>2.4</maven-taglist-plugin.version>\n    <maven-pitest-plugin.version>1.5.2</maven-pitest-plugin.version>\n    <pitest-junit5-plugin.version>0.12</pitest-junit5-plugin.version>\n    <maven-error-prone-plugin.version>2.8.6</maven-error-prone-plugin.version>\n    <error-prone.version>2.4.0</error-prone.version>\n    <nullaway.version>0.7.5</nullaway.version>\n    <maven-depgraph-plugin.version>3.3.0</maven-depgraph-plugin.version>\n    <versions-maven-plugin.version>2.7</versions-maven-plugin.version>\n    <revapi-maven-plugin.version>0.11.5</revapi-maven-plugin.version>\n    <revapi-java.version>0.21.1</revapi-java.version>\n    <nexus-staging-maven-plugin.version>1.6.8</nexus-staging-maven-plugin.version>\n    <maven-gpg-plugin.version>1.6</maven-gpg-plugin.version>\n    <maven-release-plugin.version>2.5.3</maven-release-plugin.version>\n\n    <!-- Maven Surefire ArgLine -->\n    <argLine>-Djava.util.logging.config.file=logging.properties</argLine>\n\n  </properties>\n\n  <dependencies>\n    <dependency>\n      <groupId>com.github.spotbugs</groupId>\n      <artifactId>spotbugs-annotations</artifactId>\n      <version>${spotbugs.annotations}</version>\n    </dependency>\n    <dependency>\n      <groupId>com.google.errorprone</groupId>\n      <artifactId>error_prone_annotations</artifactId>\n      <version>${error-prone.version}</version>\n    </dependency>\n    <dependency>\n      <groupId>org.apache.commons</groupId>\n      <artifactId>commons-lang3</artifactId>\n      <version>${commons.lang.version}</version>\n    </dependency>\n    <dependency>\n      <groupId>commons-io</groupId>\n      <artifactId>commons-io</artifactId>\n      <version>${commons.io.version}</version>\n    </dependency>\n\n    <!-- Test Dependencies -->\n    <dependency>\n      <groupId>org.junit.jupiter</groupId>\n      <artifactId>junit-jupiter-api</artifactId>\n      <version>${junit.version}</version>\n      <scope>test</scope>\n    </dependency>\n    <dependency>\n      <groupId>org.junit.jupiter</groupId>\n      <artifactId>junit-jupiter-engine</artifactId>\n      <version>${junit.version}</version>\n      <scope>test</scope>\n    </dependency>\n    <dependency>\n      <groupId>org.junit.platform</groupId>\n      <artifactId>junit-platform-launcher</artifactId>\n      <version>${junit-platform-launcher.version}</version>\n      <scope>test</scope>\n    </dependency>\n    <dependency>\n      <groupId>org.junit.jupiter</groupId>\n      <artifactId>junit-jupiter-params</artifactId>\n      <version>${junit.version}</version>\n      <scope>test</scope>\n    </dependency>\n    <dependency>\n      <groupId>org.mockito</groupId>\n      <artifactId>mockito-core</artifactId>\n      <version>${mockito.version}</version>\n      <scope>test</scope>\n    </dependency>\n    <dependency>\n      <groupId>org.assertj</groupId>\n      <artifactId>assertj-core</artifactId>\n      <version>${assertj.version}</version>\n      <scope>test</scope>\n    </dependency>\n    <dependency>\n      <groupId>com.tngtech.archunit</groupId>\n      <artifactId>archunit-junit5-api</artifactId>\n      <version>${archunit.version}</version>\n      <scope>test</scope>\n    </dependency>\n    <dependency>\n      <groupId>com.tngtech.archunit</groupId>\n      <artifactId>archunit-junit5-engine</artifactId>\n      <version>${archunit.version}</version>\n      <scope>test</scope>\n      <exclusions>\n        <exclusion>\n          <artifactId>junit-platform-engine</artifactId>\n          <groupId>org.junit.platform</groupId>\n        </exclusion>\n      </exclusions>\n    </dependency>\n  </dependencies>\n\n  <build>\n    <resources>\n      <resource>\n        <directory>etc</directory>\n        <filtering>true</filtering>\n      </resource>\n      <resource>\n        <directory>src/main/resources</directory>\n        <filtering>false</filtering>\n      </resource>\n    </resources>\n\n    <plugins>\n      <plugin>\n        <groupId>org.apache.maven.plugins</groupId>\n        <artifactId>maven-release-plugin</artifactId>\n        <version>${maven-release-plugin.version}</version>\n        <configuration>\n          <autoVersionSubmodules>true</autoVersionSubmodules>\n          <useReleaseProfile>false</useReleaseProfile>\n          <releaseProfiles>release</releaseProfiles>\n          <goals>deploy</goals>\n        </configuration>\n      </plugin>\n      <plugin>\n        <groupId>org.sonatype.plugins</groupId>\n        <artifactId>nexus-staging-maven-plugin</artifactId>\n        <version>${nexus-staging-maven-plugin.version}</version>\n        <extensions>true</extensions>\n        <configuration>\n          <serverId>ossrh</serverId>\n          <nexusUrl>https://oss.sonatype.org/</nexusUrl>\n          <autoReleaseAfterClose>true</autoReleaseAfterClose>\n        </configuration>\n      </plugin>\n      <plugin>\n        <artifactId>maven-compiler-plugin</artifactId>\n        <version>${maven-compiler-plugin.version}</version>\n        <configuration>\n          <source>${java.version}</source>\n          <target>${java.version}</target>\n          <testSource>${java.version}</testSource>\n          <testTarget>${java.version}</testTarget>\n          <annotationProcessorPaths>\n            <path>\n              <groupId>com.google.errorprone</groupId>\n              <artifactId>error_prone_core</artifactId>\n              <version>${error-prone.version}</version>\n            </path>\n            <path>\n              <groupId>com.uber.nullaway</groupId>\n              <artifactId>nullaway</artifactId>\n              <version>${nullaway.version}</version>\n            </path>\n          </annotationProcessorPaths>\n          <compilerArgs>\n            <arg>-Xlint:all</arg>\n            <arg>-XepAllDisabledChecksAsWarnings</arg>\n            <arg>-XepIgnoreUnknownCheckNames</arg>\n            <arg>-XepDisableWarningsInGeneratedCode</arg>\n            <arg>-XepAllErrorsAsWarnings</arg>\n            <!-- NullAway configuration -->\n            <arg>-Xep:NullAway:WARN</arg>\n            <arg>-XepOpt:NullAway:AnnotatedPackages=edu.hm.hafner</arg>\n            <!-- Disabled Rules -->\n            <arg>-Xep:PreferJavaTimeOverload:OFF</arg>\n            <arg>-Xep:EqualsGetClass:OFF</arg>\n            <arg>-Xep:AndroidJdkLibsChecker:OFF</arg>\n            <arg>-Xep:Java7ApiChecker:OFF</arg>\n            <arg>-Xep:Var:OFF</arg>\n            <arg>-Xep:PrivateConstructorForUtilityClass:OFF</arg>\n            <arg>-Xep:MethodCanBeStatic:OFF</arg>\n            <arg>-Xep:WildcardImport:OFF</arg>\n            <arg>-Xep:ThrowsUncheckedException:OFF</arg>\n            <arg>-Xep:NullableDereference:OFF</arg> <!-- Exception -->\n          </compilerArgs>\n          <compilerId>javac-with-errorprone</compilerId>\n          <forceJavacCompilerUse>true</forceJavacCompilerUse>\n          <showWarnings>true</showWarnings>\n        </configuration>\n        <dependencies>\n          <dependency>\n            <groupId>org.codehaus.plexus</groupId>\n            <artifactId>plexus-compiler-javac-errorprone</artifactId>\n            <version>${maven-error-prone-plugin.version}</version>\n          </dependency>\n        </dependencies>\n      </plugin>\n      <plugin>\n        <artifactId>maven-javadoc-plugin</artifactId>\n        <version>${maven-javadoc-plugin.version}</version>\n        <configuration>\n          <source>${java.version}</source>\n          <additionalOptions>-Xdoclint:all</additionalOptions>\n          <quiet>true</quiet>\n        </configuration>\n        <executions>\n          <execution>\n            <id>attach-javadocs</id>\n            <goals>\n              <goal>jar</goal>\n            </goals>\n          </execution>\n        </executions>\n      </plugin>\n      <plugin>\n        <groupId>org.apache.maven.plugins</groupId>\n        <artifactId>maven-source-plugin</artifactId>\n        <version>${maven-source-plugin.version}</version>\n        <executions>\n          <execution>\n            <id>attach-sources</id>\n            <goals>\n              <goal>jar</goal>\n            </goals>\n          </execution>\n        </executions>\n      </plugin>\n      <plugin>\n        <groupId>org.apache.maven.plugins</groupId>\n        <artifactId>maven-jar-plugin</artifactId>\n        <version>${maven-jar-plugin.version}</version>\n        <configuration>\n          <archive>\n            <manifestEntries>\n              <Built-By>Ullrich Hafner</Built-By>\n              <Url>${project.scm.url}</Url>\n              <Automatic-Module-Name>${module.name}</Automatic-Module-Name>\n            </manifestEntries>\n          </archive>\n        </configuration>\n        <executions>\n          <execution>\n            <goals>\n              <goal>test-jar</goal>\n            </goals>\n            <configuration>\n              <includes>\n                <include>**/assertj/*</include>\n                <include>**/ResourceTest*</include>\n                <include>**/SerializableTest*</include>\n                <include>**/ArchitectureRules*</include>\n              </includes>\n            </configuration>\n          </execution>\n          <execution>\n            <phase>package</phase>\n            <id>config</id>\n            <goals>\n              <goal>jar</goal>\n            </goals>\n            <configuration>\n              <classifier>config</classifier>\n              <includes>\n                <include>**/checkstyle-configuration.xml</include>\n                <include>**/pmd-configuration.xml</include>\n                <include>**/spotbugs-exclusion-filter.xml</include>\n              </includes>\n            </configuration>\n          </execution>\n        </executions>\n      </plugin>\n      <plugin>\n        <groupId>org.apache.maven.plugins</groupId>\n        <artifactId>maven-pmd-plugin</artifactId>\n        <version>${maven-pmd-plugin.version}</version>\n        <executions>\n          <execution>\n            <id>run-pmd</id>\n            <goals>\n              <goal>pmd</goal>\n              <goal>cpd</goal>\n            </goals>\n            <phase>verify</phase>\n          </execution>\n        </executions>\n        <configuration>\n          <linkXRef>false</linkXRef>\n          <failOnViolation>false</failOnViolation>\n          <rulesets>\n            <ruleset>etc/pmd-configuration.xml</ruleset>\n          </rulesets>\n          <targetJdk>${java.version}</targetJdk>\n          <includeTests>true</includeTests>\n          <minimumTokens>50</minimumTokens>\n          <excludeRoots>\n            <excludeRoot>target/generated-test-sources/assertj-assertions</excludeRoot>\n          </excludeRoots>\n        </configuration>\n        <dependencies>\n          <dependency>\n            <groupId>net.sourceforge.pmd</groupId>\n            <artifactId>pmd-core</artifactId>\n            <version>${pmd.version}</version>\n          </dependency>\n          <dependency>\n            <groupId>net.sourceforge.pmd</groupId>\n            <artifactId>pmd-java</artifactId>\n            <version>${pmd.version}</version>\n          </dependency>\n        </dependencies>\n      </plugin>\n      <plugin>\n        <groupId>org.apache.maven.plugins</groupId>\n        <artifactId>maven-checkstyle-plugin</artifactId>\n        <version>${maven-checkstyle-plugin.version}</version>\n        <executions>\n          <execution>\n            <id>run-checkstyle</id>\n            <goals>\n              <goal>checkstyle</goal>\n            </goals>\n            <phase>verify</phase>\n          </execution>\n        </executions>\n        <configuration>\n          <linkXRef>false</linkXRef>\n          <excludes>**/*Assert*.java</excludes>\n          <failOnViolation>false</failOnViolation>\n          <configLocation>etc/checkstyle-configuration.xml</configLocation>\n          <includeTestSourceDirectory>true</includeTestSourceDirectory>\n        </configuration>\n        <dependencies>\n          <dependency>\n            <groupId>com.puppycrawl.tools</groupId>\n            <artifactId>checkstyle</artifactId>\n            <version>${checkstyle.version}</version>\n          </dependency>\n        </dependencies>\n      </plugin>\n      <plugin>\n        <groupId>com.github.spotbugs</groupId>\n        <artifactId>spotbugs-maven-plugin</artifactId>\n        <version>${spotbugs-maven-plugin.version}</version>\n        <executions>\n          <execution>\n            <id>run-spotbugs</id>\n            <goals>\n              <goal>spotbugs</goal>\n            </goals>\n            <phase>verify</phase>\n          </execution>\n        </executions>\n        <configuration>\n          <failOnError>false</failOnError>\n          <xmlOutput>true</xmlOutput>\n          <threshold>Low</threshold>\n          <effort>Max</effort>\n          <relaxed>false</relaxed>\n          <fork>true</fork>\n          <excludeFilterFile>etc/spotbugs-exclusion-filter.xml</excludeFilterFile>\n          <includeTests>true</includeTests>\n          <plugins>\n            <plugin>\n              <groupId>com.h3xstream.findsecbugs</groupId>\n              <artifactId>findsecbugs-plugin</artifactId>\n              <version>${findsecbugs-plugin.version}</version>\n            </plugin>\n          </plugins>\n        </configuration>\n      </plugin>\n      <plugin>\n        <groupId>org.revapi</groupId>\n        <artifactId>revapi-maven-plugin</artifactId>\n        <version>${revapi-maven-plugin.version}</version>\n        <dependencies>\n          <dependency>\n            <groupId>org.revapi</groupId>\n            <artifactId>revapi-java</artifactId>\n            <version>${revapi-java.version}</version>\n          </dependency>\n        </dependencies>\n        <configuration>\n          <analysisConfiguration>\n            <revapi.semver.ignore>\n              <enabled>true</enabled>\n            </revapi.semver.ignore>\n          </analysisConfiguration>\n        </configuration>\n        <executions>\n          <execution>\n            <id>run-revapi</id>\n            <goals>\n              <goal>check</goal>\n            </goals>\n            <phase>verify</phase>\n          </execution>\n        </executions>\n      </plugin>\n    </plugins>\n\n    <pluginManagement>\n      <plugins>\n        <plugin>\n          <groupId>org.apache.maven.plugins</groupId>\n          <artifactId>maven-surefire-plugin</artifactId>\n          <version>${maven-surefire-plugin.version}</version>\n          <dependencies>\n            <dependency>\n              <groupId>com.tngtech.archunit</groupId>\n              <artifactId>archunit-junit5-engine</artifactId>\n              <version>${archunit.version}</version>\n            </dependency>\n          </dependencies>\n        </plugin>\n        <plugin>\n          <groupId>org.apache.maven.plugins</groupId>\n          <artifactId>maven-resources-plugin</artifactId>\n          <version>${maven-resources-plugin.version}</version>\n          <configuration>\n            <encoding>${source.encoding}</encoding>\n          </configuration>\n        </plugin>\n        <plugin>\n          <groupId>org.apache.maven.plugins</groupId>\n          <artifactId>maven-clean-plugin</artifactId>\n          <version>${maven-clean-plugin.version}</version>\n        </plugin>\n        <plugin>\n          <groupId>org.apache.maven.plugins</groupId>\n          <artifactId>maven-install-plugin</artifactId>\n          <version>${maven-install-plugin.version}</version>\n        </plugin>\n        <plugin>\n          <groupId>org.apache.maven.plugins</groupId>\n          <artifactId>maven-site-plugin</artifactId>\n          <version>${maven-site-plugin.version}</version>\n        </plugin>\n        <plugin>\n          <groupId>org.apache.maven.plugins</groupId>\n          <artifactId>maven-deploy-plugin</artifactId>\n          <version>${maven-deploy-plugin.version}</version>\n        </plugin>\n        <plugin>\n          <groupId>org.jacoco</groupId>\n          <artifactId>jacoco-maven-plugin</artifactId>\n          <version>${jacoco-maven-plugin.version}</version>\n          <executions>\n            <execution>\n              <goals>\n                <goal>prepare-agent</goal>\n              </goals>\n            </execution>\n            <execution>\n              <id>report</id>\n              <phase>prepare-package</phase>\n              <goals>\n                <goal>report</goal>\n              </goals>\n            </execution>\n          </executions>\n        </plugin>\n        <plugin>\n          <groupId>org.pitest</groupId>\n          <artifactId>pitest-maven</artifactId>\n          <version>${maven-pitest-plugin.version}</version>\n          <dependencies>\n            <dependency>\n              <groupId>org.pitest</groupId>\n              <artifactId>pitest-junit5-plugin</artifactId>\n              <version>${pitest-junit5-plugin.version}</version>\n            </dependency>\n          </dependencies>\n          <configuration>\n            <outputFormats>XML,HTML</outputFormats>\n          </configuration>\n        </plugin>\n        <plugin>\n          <artifactId>maven-enforcer-plugin</artifactId>\n          <executions>\n            <execution>\n              <id>display-info</id>\n              <configuration>\n                <rules>\n                  <enforceBytecodeVersion>\n                    <ignoreClasses>\n                      <!-- asm dependency from PMD contains a java9 module-info.class -->\n                      <ignoreClass>module-info</ignoreClass>\n                      <ignoreClass>ModuleUtils.class</ignoreClass>\n                    </ignoreClasses>\n                  </enforceBytecodeVersion>\n                </rules>\n              </configuration>\n            </execution>\n          </executions>\n        </plugin>\n      </plugins>\n    </pluginManagement>\n  </build>\n\n  <profiles>\n    <profile>\n      <id>skip</id>\n      <properties>\n        <maven.javadoc.skip>true</maven.javadoc.skip>\n        <pmd.skip>true</pmd.skip>\n        <spotbugs.skip>true</spotbugs.skip>\n        <checkstyle.skip>true</checkstyle.skip>\n        <skipTests>true</skipTests>\n        <skipITs>true</skipITs>\n        <revapi.skip>true</revapi.skip>\n        <gpg.skip>true</gpg.skip>\n      </properties>\n    </profile>\n    <profile>\n      <id>release</id>\n      <build>\n        <plugins>\n          <plugin>\n            <groupId>org.apache.maven.plugins</groupId>\n            <artifactId>maven-gpg-plugin</artifactId>\n            <version>${maven-gpg-plugin.version}</version>\n            <executions>\n              <execution>\n                <id>sign-artifacts</id>\n                <phase>verify</phase>\n                <goals>\n                  <goal>sign</goal>\n                </goals>\n              </execution>\n            </executions>\n          </plugin>\n        </plugins>\n      </build>\n    </profile>\n  </profiles>\n\n  <distributionManagement>\n    <snapshotRepository>\n      <id>ossrh</id>\n      <url>https://oss.sonatype.org/content/repositories/snapshots</url>\n    </snapshotRepository>\n    <repository>\n      <id>ossrh</id>\n      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>\n    </repository>\n  </distributionManagement>\n\n</project>\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- pom.xml	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ pom.xml	(date 1595938343832)
+@@ -5,7 +5,7 @@
+   <modelVersion>4.0.0</modelVersion>
+   <groupId>edu.hm.hafner</groupId>
+   <artifactId>codingstyle</artifactId>
+-  <version>1.2.0-SNAPSHOT</version>
++  <version>2.0.0-SNAPSHOT</version>
+ 
+   <packaging>jar</packaging>
+ 
+Index: src/test/java/edu/hm/hafner/util/StringComparableTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/StringComparableTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/StringComparableTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,19 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-/**
+- * Example class that shows on how to verify that String instances comply with the contract in {@link
+- * Comparable#compareTo(Object)}.
+- *
+- * @author Ullrich Hafner
+- */
+-class StringComparableTest extends AbstractComparableTest<String> {
+-    @Override
+-    protected String createSmallerSut() {
+-        return "a bc";
+-    }
+-
+-    @Override
+-    protected String createGreaterSut() {
+-        return "z yx";
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/PackageArchitectureTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/PackageArchitectureTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/PackageArchitectureTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,42 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.net.URL;
+-
+-import com.tngtech.archunit.junit.AnalyzeClasses;
+-import com.tngtech.archunit.junit.ArchTest;
+-import com.tngtech.archunit.lang.ArchRule;
+-
+-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.*;
+-import static com.tngtech.archunit.library.plantuml.PlantUmlArchCondition.Configurations.*;
+-import static com.tngtech.archunit.library.plantuml.PlantUmlArchCondition.*;
+-
+-/**
+- * Checks the package architecture of this plugin.
+- *
+- * @author Ullrich Hafner
+- */
+-@SuppressWarnings("hideutilityclassconstructor")
+-@AnalyzeClasses(packages = "edu.hm.hafner..")
+-class PackageArchitectureTest {
+-    private static final URL PACKAGE_DESIGN = PackageArchitectureTest.class.getResource("/design.puml");
+-
+-    @ArchTest
+-    static final ArchRule ADHERES_TO_PACKAGE_DESIGN
+-            = classes().should(adhereToPlantUmlDiagram(PACKAGE_DESIGN,
+-            consideringOnlyDependenciesInAnyPackage("edu.hm.hafner..")));
+-
+-    @ArchTest
+-    static final ArchRule NO_PUBLIC_TEST_CLASSES = ArchitectureRules.NO_PUBLIC_TEST_CLASSES;
+-
+-    @ArchTest
+-    static final ArchRule NO_TEST_API_CALLED = ArchitectureRules.NO_TEST_API_CALLED;
+-
+-    @ArchTest
+-    static final ArchRule NO_FORBIDDEN_PACKAGE_ACCESSED = ArchitectureRules.NO_FORBIDDEN_PACKAGE_ACCESSED;
+-
+-    @ArchTest
+-    static final ArchRule NO_FORBIDDEN_CLASSES_CALLED = ArchitectureRules.NO_FORBIDDEN_CLASSES_CALLED;
+-
+-    @ArchTest
+-    static final ArchRule NO_FORBIDDEN_ANNOTATION_USED = ArchitectureRules.NO_FORBIDDEN_ANNOTATION_USED;
+-}
+Index: src/test/java/edu/hm/hafner/util/PathUtilTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/PathUtilTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/PathUtilTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,183 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.io.IOException;
+-import java.nio.file.LinkOption;
+-import java.nio.file.Path;
+-import java.nio.file.Paths;
+-
+-import org.junit.jupiter.api.DisplayName;
+-import org.junit.jupiter.api.Test;
+-import org.junit.jupiter.params.ParameterizedTest;
+-import org.junit.jupiter.params.provider.ValueSource;
+-
+-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+-
+-import static org.assertj.core.api.Assertions.*;
+-import static org.assertj.core.api.Assumptions.*;
+-
+-/**
+- * Tests the class {@link PathUtil}.
+- *
+- * @author Ullrich Hafner
+- */
+-@SuppressFBWarnings("DMI")
+-class PathUtilTest extends ResourceTest {
+-    private static final String NOT_EXISTING = "/should/not/exist";
+-    private static final String ILLEGAL = "\0 Null-Byte";
+-    private static final String FILE_NAME = "relative.txt";
+-    private static final String NOT_EXISTING_RELATIVE = "not-existing-relative";
+-
+-    /**
+-     * Ensures that illegal file names are processed without problems and the test for existence returns {@code false}.
+-     *
+-     * @param fileName
+-     *         the file name to check
+-     */
+-    @ParameterizedTest(name = "[{index}] Illegal filename = {0}")
+-    @ValueSource(strings = {"/does/not/exist", "\0 Null-Byte", "C:/!<>$&/&( \0", "/!<>$&/&( \0"})
+-    @DisplayName("Should not change path on errors")
+-    void shouldReturnFallbackOnError(final String fileName) {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.exists(fileName)).isFalse();
+-        assertThat(pathUtil.exists(fileName, "/")).isFalse();
+-        assertThat(pathUtil.getRelativePath(Paths.get("/"), fileName)).isEqualTo(fileName);
+-        assertThat(pathUtil.getRelativePath("/", fileName)).isEqualTo(fileName);
+-        assertThat(pathUtil.getRelativePath(fileName)).isEqualTo(fileName);
+-        assertThat(pathUtil.getAbsolutePath(fileName)).isEqualTo(fileName);
+-        assertThat(pathUtil.createAbsolutePath("/", fileName)).isEqualTo(fileName);
+-    }
+-
+-    @ParameterizedTest(name = "[{index}] Not normalized file name = {0}")
+-    @ValueSource(strings = {"./relative.txt", "./folder/../relative.txt", "prefix/one/../two/..//../relative.txt"})
+-    @DisplayName("Should shorten non normalized paths")
+-    void shouldNormalizePath(final String fileName) {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.exists(fileName)).isFalse();
+-        assertThat(pathUtil.exists(fileName, "/")).isFalse();
+-        assertThat(pathUtil.exists(fileName, fileName)).isFalse();
+-        assertThat(pathUtil.getRelativePath(fileName)).isEqualTo(FILE_NAME);
+-    }
+-
+-    @Test
+-    @DisplayName("Should find some files in the resources folder")
+-    void shouldFindResourceFolder() {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.exists(getResourceAsFile(FILE_NAME).toString())).isTrue();
+-        assertThat(pathUtil.exists(getResourceAsFile(FILE_NAME).getParent().toString())).isTrue();
+-        assertThat(pathUtil.exists(FILE_NAME, getResourceAsFile(FILE_NAME).getParent().toString())).isTrue();
+-        assertThat(pathUtil.exists(getResourceAsFile(FILE_NAME).getRoot().toString())).isTrue();
+-    }
+-
+-    @DisplayName("Should verify valid absolute paths")
+-    @ParameterizedTest(name = "[{index}] path={0}")
+-    @ValueSource(strings = {"/", "/tmp", "C:\\", "c:\\", "C:\\Tmp"})
+-    void shouldFindAbsolutePaths(final String path) {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.isAbsolute(path)).isTrue();
+-    }
+-
+-    @Test
+-    @DisplayName("Should return fallback if path is invalid")
+-    void shouldReturnFallbackIfAbsolutePathIsNotValid() {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.getAbsolutePath(NOT_EXISTING)).isEqualTo(NOT_EXISTING);
+-        assertThat(pathUtil.getAbsolutePath("C:\\should\\not\\exist")).isEqualTo("C:" + NOT_EXISTING);
+-        assertThat(pathUtil.getAbsolutePath(ILLEGAL)).isEqualTo(ILLEGAL);
+-    }
+-
+-    @Test
+-    @DisplayName("Should return fallback if parent is invalid")
+-    void shouldReturnFallbackIfParentIsInvalid() {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.createAbsolutePath("///a/b/", FILE_NAME)).isEqualTo(FILE_NAME);
+-    }
+-
+-    @Test
+-    void shouldConvertToAbsolute() {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.createAbsolutePath(null, FILE_NAME)).isEqualTo(FILE_NAME);
+-        assertThat(pathUtil.createAbsolutePath("", FILE_NAME)).isEqualTo(FILE_NAME);
+-        assertThat(pathUtil.createAbsolutePath("/", FILE_NAME)).isEqualTo("/" + FILE_NAME);
+-        assertThat(pathUtil.createAbsolutePath("/tmp", FILE_NAME)).isEqualTo("/tmp/" + FILE_NAME);
+-        assertThat(pathUtil.createAbsolutePath("/tmp/", FILE_NAME)).isEqualTo("/tmp/" + FILE_NAME);
+-    }
+-
+-    @Test
+-    void shouldConvertToRelative() {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        Path absolutePath = getResourceAsFile(FILE_NAME);
+-
+-        assertThat(pathUtil.getRelativePath(absolutePath.getParent(), FILE_NAME)).isEqualTo(FILE_NAME);
+-        assertThat(pathUtil.getRelativePath(FILE_NAME)).isEqualTo(FILE_NAME);
+-        assertThat(pathUtil.getRelativePath(absolutePath.getParent(), NOT_EXISTING_RELATIVE)).isEqualTo(
+-                NOT_EXISTING_RELATIVE);
+-
+-        assertThat(pathUtil.getRelativePath(absolutePath.getParent().getParent(), "util/" + FILE_NAME)).isEqualTo(
+-                "util/" + FILE_NAME);
+-
+-        assertThat(pathUtil.getRelativePath(absolutePath.getParent(), absolutePath.toString())).isEqualTo(FILE_NAME);
+-        assertThat(pathUtil.getRelativePath(Paths.get(NOT_EXISTING), absolutePath.toString())).isEqualTo(
+-                pathUtil.getAbsolutePath(absolutePath));
+-        assertThat(pathUtil.getRelativePath(Paths.get(NOT_EXISTING), FILE_NAME)).isEqualTo(FILE_NAME);
+-
+-        assertThat(pathUtil.getRelativePath(NOT_EXISTING, FILE_NAME)).isEqualTo(FILE_NAME);
+-    }
+-
+-    @Test
+-    void shouldConvertNotResolvedToRelative() {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        Path absolutePath = getResourceAsFile(FILE_NAME);
+-
+-        assertThat(pathUtil.getRelativePath(absolutePath.getParent().getParent(), "./util/" + FILE_NAME)).isEqualTo(
+-                "util/" + FILE_NAME);
+-        assertThat(pathUtil.getRelativePath(absolutePath.getParent().getParent(),
+-                "../hafner/util/" + FILE_NAME)).isEqualTo("util/" + FILE_NAME);
+-    }
+-
+-    @Test
+-    void shouldSkipAlreadyAbsoluteOnUnix() {
+-        assumeThatTestIsRunningOnUnix();
+-
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.createAbsolutePath("/tmp/", "/tmp/file.txt")).isEqualTo("/tmp/file.txt");
+-    }
+-
+-    @Test
+-    void shouldSkipAlreadyAbsoluteOnWindows() {
+-        assumeThatTestIsRunningOnWindows();
+-
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.createAbsolutePath("C:\\tmp", "C:\\tmp\\file.txt")).isEqualTo("C:/tmp/file.txt");
+-    }
+-
+-    @Test
+-    void shouldNormalizeDriveLetter() {
+-        PathUtil pathUtil = new PathUtil();
+-
+-        assertThat(pathUtil.getAbsolutePath("c:\\tmp")).isEqualTo("C:/tmp");
+-    }
+-
+-    @Test
+-    void shouldStayInSymbolicLinks() throws IOException {
+-        Path current = Paths.get(".");
+-        Path real = current.toRealPath();
+-        Path realWithSymbolic = current.toRealPath(LinkOption.NOFOLLOW_LINKS);
+-
+-        assumeThat(real).as("Current working directory path is not based on symbolic links").isNotEqualTo(realWithSymbolic);
+-
+-        String fromUtil = new PathUtil().getAbsolutePath(current);
+-        String unixStyle = realWithSymbolic.toString().replace('\\', '/');
+-        assertThat(fromUtil).isEqualTo(unixStyle);
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/PrefixLoggerTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/PrefixLoggerTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/PrefixLoggerTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,50 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.io.PrintStream;
+-
+-import org.junit.jupiter.api.Test;
+-
+-import static java.util.Arrays.*;
+-import static java.util.Collections.*;
+-import static org.mockito.Mockito.*;
+-
+-/**
+- * Tests the class {@link PrefixLogger}.
+- *
+- * @author Ullrich Hafner
+- */
+-class PrefixLoggerTest {
+-    private static final String LOG_MESSAGE = "Hello PrefixLogger!";
+-    private static final String TOOL_NAME = "test";
+-    private static final String EXPECTED_TOOL_PREFIX = "[test]";
+-    private static final String FIRST_MESSAGE = "One";
+-    private static final String SECOND_MESSAGE = "Two";
+-
+-    @Test @SuppressWarnings("PMD.CloseResource")
+-    void shouldLogSingleAndMultipleLines() {
+-        PrintStream printStream = mock(PrintStream.class);
+-        PrefixLogger logger = new PrefixLogger(printStream, TOOL_NAME);
+-
+-        logger.log(LOG_MESSAGE);
+-
+-        verify(printStream).println(EXPECTED_TOOL_PREFIX + " " + LOG_MESSAGE);
+-
+-        PrefixLogger loggerWithBraces = new PrefixLogger(printStream, EXPECTED_TOOL_PREFIX);
+-
+-        loggerWithBraces.log(LOG_MESSAGE);
+-
+-        verify(printStream, times(2)).println(EXPECTED_TOOL_PREFIX + " " + LOG_MESSAGE);
+-
+-        logger.logEachLine(emptyList());
+-
+-        verifyNoMoreInteractions(printStream);
+-
+-        logger.logEachLine(singletonList(FIRST_MESSAGE));
+-
+-        verify(printStream).println(EXPECTED_TOOL_PREFIX + " " + FIRST_MESSAGE);
+-
+-        logger.logEachLine(asList(FIRST_MESSAGE, SECOND_MESSAGE));
+-        verify(printStream, times(2)).println(EXPECTED_TOOL_PREFIX + " " + FIRST_MESSAGE);
+-        verify(printStream).println(EXPECTED_TOOL_PREFIX + " " + SECOND_MESSAGE);
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/StringContainsUtilsTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/StringContainsUtilsTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/StringContainsUtilsTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,34 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import org.junit.jupiter.api.Test;
+-
+-import static edu.hm.hafner.util.StringContainsUtils.*;
+-import static org.assertj.core.api.Assertions.*;
+-
+-/**
+- * Tests the class {@link StringContainsUtils}.
+- *
+- * @author Ullrich Hafner
+- */
+-class StringContainsUtilsTest {
+-    @Test
+-    void shouldHandleNull() {
+-        assertThat(containsAnyIgnoreCase("This is a string text.", (String[]) null)).isFalse();
+-        assertThat(containsAnyIgnoreCase("This is a string text.", (String) null)).isFalse();
+-        assertThat(containsAnyIgnoreCase("This is a string text.")).isFalse();
+-
+-        assertThat(containsAnyIgnoreCase(null)).isFalse();
+-        assertThat(containsAnyIgnoreCase(null, (String) null)).isFalse();
+-        assertThat(containsAnyIgnoreCase(null, (String[]) null)).isFalse();
+-    }
+-
+-    @Test
+-    void shouldSearchStrings() {
+-        assertThat(containsAnyIgnoreCase("This is a string text.", "something")).isFalse();
+-
+-        assertThat(containsAnyIgnoreCase("This is a string text.", "This")).isTrue();
+-        assertThat(containsAnyIgnoreCase("This is a string text.", "this")).isTrue();
+-        assertThat(containsAnyIgnoreCase("This is a string text.", "wrong", "is")).isTrue();
+-        assertThat(containsAnyIgnoreCase("This is a string text.", "wrong", "IS")).isTrue();
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/AbstractEqualsTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/AbstractEqualsTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/AbstractEqualsTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,43 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import org.junit.jupiter.api.Test;
+-
+-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+-
+-import static org.assertj.core.api.Assertions.*;
+-
+-/**
+- * Verifies that objects of any Java class comply with the contract in {@link Object#equals(Object)}.
+- *
+- * @author Ullrich Hafner
+- */
+-public abstract class AbstractEqualsTest {
+-    /**
+-     * Creates the subject under test.
+-     *
+-     * @return the SUT
+-     */
+-    protected abstract Object createSut();
+-
+-    /**
+-     * Verifies that for any non-null reference value {@code x}, {@code x.equals(null)} should return {@code false}.
+-     */
+-    @Test
+-    @SuppressFBWarnings("EC")
+-    @SuppressWarnings({"PMD.EqualsNull", "checkstyle:equalsavoidnull", "ConstantConditions"})
+-    void shouldReturnFalseOnEqualsNull() {
+-        assertThat(createSut().equals(null)).isFalse();
+-    }
+-
+-    /**
+-     * Verifies that equals is <i>reflexive</i>: for any non-null reference value {@code x}, {@code x.equals(x)} should
+-     * return {@code true}.
+-     */
+-    @SuppressWarnings("EqualsWithItself")
+-    @Test
+-    void shouldReturnTrueOnEqualsThis() {
+-        Object sut = createSut();
+-
+-        assertThat(sut.equals(sut)).isTrue();
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/FilteredLogTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/FilteredLogTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/FilteredLogTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,90 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import org.junit.jupiter.api.Test;
+-
+-import static org.assertj.core.api.Assertions.*;
+-
+-/**
+- * Tests the class {@link FilteredLog}.
+- *
+- * @author Ullrich Hafner
+- */
+-class FilteredLogTest {
+-    private static final String TITLE = "Title: ";
+-
+-    @Test
+-    void shouldLogNothing() {
+-        FilteredLog filteredLog = new FilteredLog(TITLE, 5);
+-
+-        assertThat(filteredLog.getErrorMessages()).isEmpty();
+-        filteredLog.logSummary();
+-        assertThat(filteredLog.getErrorMessages()).isEmpty();
+-    }
+-
+-    @Test
+-    void shouldLogAllErrors() {
+-        FilteredLog filteredLog = new FilteredLog(TITLE, 5);
+-
+-        filteredLog.logError("1");
+-        filteredLog.logError("2");
+-        filteredLog.logError("3");
+-        filteredLog.logError("4");
+-        filteredLog.logError("5");
+-
+-        assertThatExactly5MessagesAreLogged(filteredLog);
+-
+-        filteredLog.logSummary();
+-
+-        assertThatExactly5MessagesAreLogged(filteredLog);
+-        assertThat(filteredLog.size()).isEqualTo(5);
+-    }
+-
+-    @Test
+-    void shouldSkipAdditionalErrors() {
+-        FilteredLog filteredLog = new FilteredLog(TITLE, 5);
+-
+-        filteredLog.logError("1");
+-        filteredLog.logError("2");
+-        filteredLog.logError("3");
+-        filteredLog.logError("4");
+-        filteredLog.logError("5");
+-        filteredLog.logError("6");
+-        filteredLog.logError("7");
+-
+-        assertThatExactly5MessagesAreLogged(filteredLog);
+-
+-        filteredLog.logSummary();
+-
+-        assertThat(filteredLog.getErrorMessages()).containsExactly(TITLE, "1", "2", "3", "4", "5",
+-                "  ... skipped logging of 2 additional errors ...");
+-        assertThat(filteredLog.size()).isEqualTo(7);
+-    }
+-
+-    private void assertThatExactly5MessagesAreLogged(final FilteredLog filteredLog) {
+-        assertThat(filteredLog.getErrorMessages()).containsExactly(TITLE, "1", "2", "3", "4", "5");
+-    }
+-
+-    @Test
+-    void shouldLogExceptions() {
+-        FilteredLog filteredLog = new FilteredLog(TITLE, 1);
+-
+-        filteredLog.logException(new IllegalArgumentException("Cause"), "Message");
+-        filteredLog.logException(new IllegalArgumentException(""), "Message");
+-
+-        assertThat(filteredLog.getErrorMessages()).contains(TITLE,
+-                "Message", "java.lang.IllegalArgumentException: Cause",
+-                "\tat edu.hm.hafner.util.FilteredLogTest.shouldLogExceptions(FilteredLogTest.java:71)");
+-    }
+-
+-    @Test
+-    void shouldLog20ErrorsByDefault() {
+-        FilteredLog filteredLog = new FilteredLog(TITLE);
+-
+-        for (int i = 0; i < 25; i++) {
+-            filteredLog.logError("error" + i);
+-            filteredLog.logInfo("info" + i);
+-        }
+-        assertThat(filteredLog.getErrorMessages()).hasSize(21).contains("error19").doesNotContain("error20");
+-        assertThat(filteredLog.getInfoMessages()).hasSize(25).contains("info0").contains("info24");
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/ResourceTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/ResourceTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/ResourceTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,248 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.io.BufferedReader;
+-import java.io.File;
+-import java.io.IOException;
+-import java.io.InputStream;
+-import java.io.StringReader;
+-import java.net.URISyntaxException;
+-import java.net.URL;
+-import java.nio.charset.Charset;
+-import java.nio.charset.StandardCharsets;
+-import java.nio.file.Files;
+-import java.nio.file.Path;
+-import java.nio.file.Paths;
+-import java.util.stream.Stream;
+-
+-import org.apache.commons.io.input.BOMInputStream;
+-import org.opentest4j.TestAbortedException;
+-
+-import com.google.errorprone.annotations.MustBeClosed;
+-
+-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+-
+-import static org.assertj.core.api.Assumptions.*;
+-
+-/**
+- * Base class for tests that need to read resource files from disk. Provides several useful methods that simplify
+- * reading of resources from disk.
+- *
+- * @author Ullrich Hafner
+- */
+-@SuppressWarnings("PMD.AbstractClassWithoutAbstractMethod")
+-public abstract class ResourceTest {
+-    /**
+-     * Returns whether the OS under test is Windows or Unix.
+-     *
+-     * @return {@code true} if the OS is Windows, {@code false} otherwise
+-     */
+-    protected boolean isWindows() {
+-        return File.pathSeparatorChar == ';';
+-    }
+-
+-    /**
+-     * Reads all the bytes from a file. The method ensures that the file is closed when all bytes have been read or an
+-     * I/O error, or other runtime exception, is thrown.
+-     *
+-     * <p> Note that this method is intended for simple cases where it is
+-     * convenient to read all bytes into a byte array. It is not intended for reading in large files.
+-     * </p>
+-     *
+-     * @param fileName
+-     *         name of the desired resource
+-     *
+-     * @return the content represented by a byte array
+-     */
+-    protected byte[] readAllBytes(final String fileName) {
+-        try {
+-            return readAllBytes(getPath(fileName));
+-        }
+-        catch (URISyntaxException e) {
+-            throw new AssertionError("Can't find resource " + fileName, e);
+-        }
+-    }
+-
+-    /**
+-     * Reads all the bytes from a file. The method ensures that the file is closed when all bytes have been read or an
+-     * I/O error, or other runtime exception, is thrown.
+-     *
+-     * <p> Note that this method is intended for simple cases where it is
+-     * convenient to read all bytes into a byte array. It is not intended for reading in large files.
+-     * </p>
+-     *
+-     * @param path
+-     *         path of the desired resource
+-     *
+-     * @return the content represented by a byte array
+-     */
+-    protected byte[] readAllBytes(final Path path) {
+-        try {
+-            return Files.readAllBytes(path);
+-        }
+-        catch (IOException e) {
+-            throw new AssertionError("Can't read resource " + path, e);
+-        }
+-    }
+-
+-    @SuppressFBWarnings("UI_INHERITANCE_UNSAFE_GETRESOURCE")
+-    private Path getPath(final String name) throws URISyntaxException {
+-        URL resource = getTestResourceClass().getResource(name);
+-        ensureThatResourceExists(resource, name);
+-        return Paths.get(resource.toURI());
+-    }
+-
+-    /**
+-     * Read all lines from the desired resource as a {@code Stream}, i.e. this method populates lazily as the stream is
+-     * consumed.
+-     * <p>
+-     * Bytes from the resource are decoded into characters using UTF-8 and the same line terminators as specified by
+-     * {@link Files#readAllLines(Path, Charset)} are supported.
+-     * </p>
+-     *
+-     * @param fileName
+-     *         name of the desired resource
+-     *
+-     * @return the content represented as a {@link Stream} of lines
+-     */
+-    @MustBeClosed
+-    protected Stream<String> asStream(final String fileName) {
+-        return asStream(fileName, StandardCharsets.UTF_8);
+-    }
+-
+-    /**
+-     * Read all lines from the desired resource as a {@code Stream}, i.e. this method populates lazily as the stream is
+-     * consumed.
+-     * <p>
+-     * Bytes from the resource are decoded into characters using the specified charset and the same line terminators as
+-     * specified by {@link Files#readAllLines(Path, Charset)} are supported.
+-     * </p>
+-     *
+-     * @param fileName
+-     *         name of the desired resource
+-     * @param charset
+-     *         the charset to use for decoding
+-     *
+-     * @return the content represented as a {@link Stream} of lines
+-     */
+-    @MustBeClosed
+-    protected Stream<String> asStream(final String fileName, final Charset charset) {
+-        try {
+-            return Files.lines(getPath(fileName), charset);
+-        }
+-        catch (IOException | URISyntaxException e) {
+-            throw new AssertionError("Can't read resource " + fileName, e);
+-        }
+-    }
+-
+-    /**
+-     * Finds a resource with the given name and returns an input stream with UTF-8 decoding.
+-     *
+-     * @param fileName
+-     *         name of the desired resource
+-     *
+-     * @return the content represented as an {@link InputStream}
+-     */
+-    protected InputStream asInputStream(final String fileName) {
+-        InputStream stream = getTestResourceClass().getResourceAsStream(fileName);
+-
+-        ensureThatResourceExists(stream, fileName);
+-
+-        return stream;
+-    }
+-
+-    private void ensureThatResourceExists(final Object resource, final String fileName) {
+-        if (resource == null) {
+-            throw new AssertionError("Can't find resource " + fileName);
+-        }
+-    }
+-
+-    /**
+-     * Returns the class that should be used to read the resource files of a test.
+-     *
+-     * @return default value is the actual test class
+-     */
+-    protected Class<?> getTestResourceClass() {
+-        return getClass();
+-    }
+-
+-    /**
+-     * Finds a resource with the given name and returns the content (decoded with UTF-8) as String.
+-     *
+-     * @param fileName
+-     *         name of the desired resource
+-     *
+-     * @return the content represented as {@link String}
+-     */
+-    protected String toString(final String fileName) {
+-        return createString(readAllBytes(fileName));
+-    }
+-
+-    /**
+-     * Returns the content of the specified {@link Path} (decoded with UTF-8) as String.
+-     *
+-     * @param file
+-     *         the desired file
+-     *
+-     * @return the content represented as {@link String}
+-     */
+-    protected String toString(final Path file) {
+-        return createString(readAllBytes(file));
+-    }
+-
+-    private String createString(final byte[] bytes) {
+-        return new String(bytes, StandardCharsets.UTF_8);
+-    }
+-
+-    /**
+-     * Read all lines from the specified text String as a {@code Stream}.
+-     *
+-     * @param text
+-     *         the text to return as {@link Stream} of lines
+-     *
+-     * @return the content represented by a byte array
+-     */
+-    @SuppressWarnings({"resource", "IOResourceOpenedButNotSafelyClosed"})
+-    protected Stream<String> getTextLinesAsStream(final String text) {
+-        return new BufferedReader(new StringReader(text)).lines();
+-    }
+-
+-    /**
+-     * Returns the {@link Path} of the specified resource. The file name  must be relative to the test class.
+-     *
+-     * @param fileName
+-     *         the file to read (relative to this {@link ResourceTest} class)
+-     *
+-     * @return an {@link BOMInputStream input stream} using character set UTF-8
+-     * @see #getTestResourceClass()
+-     */
+-    protected Path getResourceAsFile(final String fileName) {
+-        try {
+-            URL resource = getTestResourceClass().getResource(fileName);
+-
+-            ensureThatResourceExists(resource, fileName);
+-
+-            return Paths.get(resource.toURI());
+-        }
+-        catch (URISyntaxException e) {
+-            throw new AssertionError("Can't open file " + fileName, e);
+-        }
+-    }
+-
+-    /**
+-     * Assumes that the test is running on Windows.
+-     *
+-     * @throws TestAbortedException if the test is running on a Unix system
+-     */
+-    protected void assumeThatTestIsRunningOnWindows() {
+-        assumeThat(isWindows()).as("Test is not running on Windows").isTrue();
+-    }
+-
+-    /**
+-     * Assumes that the test is running on Windows.
+-     *
+-     * @throws TestAbortedException if the test is running on a Unix system
+-     */
+-    protected void assumeThatTestIsRunningOnUnix() {
+-        assumeThat(isWindows()).as("Test is not running on Unix").isFalse();
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/ArchitectureRules.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/ArchitectureRules.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/ArchitectureRules.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,115 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.io.Serializable;
+-import java.util.Arrays;
+-
+-import org.apache.commons.lang3.StringUtils;
+-
+-import com.tngtech.archunit.base.DescribedPredicate;
+-import com.tngtech.archunit.core.domain.JavaCall;
+-import com.tngtech.archunit.core.domain.JavaModifier;
+-import com.tngtech.archunit.core.domain.properties.CanBeAnnotated;
+-import com.tngtech.archunit.junit.ArchTest;
+-import com.tngtech.archunit.lang.ArchRule;
+-
+-import static com.tngtech.archunit.core.domain.JavaClass.Predicates.*;
+-import static com.tngtech.archunit.lang.conditions.ArchPredicates.*;
+-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.*;
+-
+-/**
+- * Defines several architecture rules that should be enforced in this project.
+- *
+- * @author Ullrich Hafner
+- */
+-public final class ArchitectureRules {
+-    /** Junit 5 test classes should not be public. */
+-    public static final ArchRule NO_PUBLIC_TEST_CLASSES =
+-            noClasses().that().haveSimpleNameEndingWith("Test")
+-                    .and().haveSimpleNameNotContaining("_jmh")
+-                    .and().doNotHaveModifier(JavaModifier.ABSTRACT)
+-                    .should().bePublic();
+-
+-    /**
+-     * Methods or constructors that are annotated with {@link VisibleForTesting} must not be called by other classes.
+-     * These methods are meant to be {@code private}. Only test classes are allowed to call these methods.
+-     */
+-    public static final ArchRule NO_TEST_API_CALLED =
+-            noClasses().that()
+-                    .haveSimpleNameNotEndingWith("Test").and().haveSimpleNameNotContaining("Benchmark")
+-                    .should().callCodeUnitWhere(new AccessRestrictedToTests());
+-
+-    /** Prevents that classes use visible but forbidden API. */
+-    public static final ArchRule NO_FORBIDDEN_PACKAGE_ACCESSED =
+-            noClasses().should().dependOnClassesThat(resideInAnyPackage(
+-                    "org.apache.commons.lang..",
+-                    "org.joda.time..",
+-                    "javax.xml.bind..",
+-                    "javax.annotation..",
+-                    "net.jcip.annotations.."));
+-
+-    /** Prevents that classes use visible but forbidden API. */
+-    public static final ArchRule NO_FORBIDDEN_ANNOTATION_USED =
+-            noClasses().should().dependOnClassesThat(
+-                    have(type(edu.umd.cs.findbugs.annotations.CheckForNull.class)));
+-
+-    /** Prevents that classes use visible but forbidden API. */
+-    public static final ArchRule NO_FORBIDDEN_CLASSES_CALLED
+-            = noClasses()
+-            .should().callCodeUnitWhere(new TargetIsForbiddenClass(
+-                    "org.junit.jupiter.api.Assertions", "org.junit.Assert"));
+-
+-    /** Ensures that the {@code readResolve} method has the correct signature. */
+-    @ArchTest
+-    public static final ArchRule READ_RESOLVE_SHOULD_BE_PROTECTED =
+-            methods().that().haveFullName("readResolve").and().haveRawReturnType(Object.class)
+-                    .should().beDeclaredInClassesThat().implement(Serializable.class)
+-                    .andShould().beProtected();
+-
+-    /**
+-     * Matches if a call from outside the defining class uses a method or constructor annotated with {@link
+-     * VisibleForTesting}. There are two exceptions:
+-     * <ul>
+-     * <li>The method is called on the same class</li>
+-     * <li>The method is called in a method also annotated with {@link VisibleForTesting}</li>
+-     * </ul>
+-     */
+-    private static class AccessRestrictedToTests extends DescribedPredicate<JavaCall<?>> {
+-        AccessRestrictedToTests() {
+-            super("access is restricted to tests");
+-        }
+-
+-        @Override
+-        public boolean apply(final JavaCall<?> input) {
+-            return isVisibleForTesting(input.getTarget())
+-                    && !input.getOriginOwner().equals(input.getTargetOwner())
+-                    && !isVisibleForTesting(input.getOrigin());
+-        }
+-
+-        private boolean isVisibleForTesting(final CanBeAnnotated target) {
+-            return target.isAnnotatedWith(VisibleForTesting.class);
+-        }
+-    }
+-
+-    /**
+-     * Matches if a code unit of one of the registered classes has been called.
+-     */
+-    private static class TargetIsForbiddenClass extends DescribedPredicate<JavaCall<?>> {
+-        private final String[] classes;
+-
+-        TargetIsForbiddenClass(final String... classes) {
+-            super("forbidden class");
+-
+-            this.classes = Arrays.copyOf(classes, classes.length);
+-        }
+-
+-        @Override
+-        public boolean apply(final JavaCall<?> input) {
+-            return StringUtils.containsAny(input.getTargetOwner().getFullName(), classes)
+-                    && !input.getName().equals("assertTimeoutPreemptively");
+-        }
+-    }
+-
+-    private ArchitectureRules() {
+-        // prevents instantiation
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/StringEqualsTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/StringEqualsTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/StringEqualsTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,14 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-/**
+- * Example class that shows on how to verify that String instances comply with the contract in {@link
+- * Object#equals(Object)}.
+- *
+- * @author Ullrich Hafner
+- */
+-class StringEqualsTest extends AbstractEqualsTest {
+-    @Override
+-    protected Object createSut() {
+-        return "Hello World";
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/EnsureTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/EnsureTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/EnsureTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,184 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.util.Collections;
+-
+-import org.assertj.core.util.Lists;
+-import org.junit.jupiter.api.Test;
+-
+-import static org.assertj.core.api.Assertions.*;
+-
+-/**
+- * Tests the class {@link Ensure}.
+- *
+- * @author Ullrich Hafner
+- */
+-@SuppressWarnings("NullArgumentToVariableArgMethod")
+-class EnsureTest {
+-    private static final String SOME_STRING = "-";
+-    private static final String EMPTY_STRING = "";
+-    private static final String ERROR_MESSAGE = "assertThatThrownBy Error.";
+-
+-    /**
+-     * Checks whether no exception is thrown if we adhere to all contracts.
+-     */
+-    @Test
+-    void shouldNotThrowExceptionIfContractIsValid() {
+-        assertThatCode(() -> {
+-            Ensure.that(false).isFalse();
+-            Ensure.that(true).isTrue();
+-            Ensure.that(EMPTY_STRING).isNotNull();
+-            Ensure.that(EMPTY_STRING, EMPTY_STRING).isNotNull();
+-            Ensure.that(null, (Object)null).isNull();
+-            Ensure.that(new String[]{EMPTY_STRING}).isNotEmpty();
+-            Ensure.that(SOME_STRING).isNotEmpty();
+-            Ensure.that(SOME_STRING).isNotBlank();
+-            Ensure.that(EMPTY_STRING).isInstanceOf(String.class);
+-            Ensure.that(Collections.singleton(EMPTY_STRING)).isNotEmpty();
+-            Ensure.that(Collections.singleton(EMPTY_STRING)).contains(EMPTY_STRING);
+-            Ensure.that(Collections.singleton(EMPTY_STRING)).doesNotContain(SOME_STRING);
+-        }).doesNotThrowAnyException();
+-    }
+-
+-    /**
+-     * Checks whether we throw an exception if a contract is violated.
+-     */
+-    @Test
+-    @SuppressWarnings("Convert2MethodRef")
+-    void shouldThrowExceptionIfContractIsViolated() {
+-        assertThatThrownBy(() -> {
+-            Ensure.that(new IllegalArgumentException(ERROR_MESSAGE)).isNeverThrown(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(true).isFalse();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(true).isFalse(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(false).isTrue();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(false).isTrue(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.thatStatementIsNeverReached();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.thatStatementIsNeverReached(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(SOME_STRING).isNull();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(SOME_STRING).isNull(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(SOME_STRING, SOME_STRING).isNull(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(Collections.emptySet()).contains(EMPTY_STRING);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(Collections.singleton(EMPTY_STRING)).contains(SOME_STRING);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(Collections.singleton(EMPTY_STRING)).doesNotContain(EMPTY_STRING);
+-        }).isInstanceOf(AssertionError.class);
+-    }
+-
+-    /**
+-     * Checks whether we throw an exception if a contract is violated.
+-     */
+-    @Test
+-    void shouldThrowNpeIfContractIsViolated() {
+-        assertThatThrownBy(() -> {
+-            Ensure.that((Object)null).isNotNull(ERROR_MESSAGE);
+-        }).isInstanceOf(NullPointerException.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(SOME_STRING, (Object)null).isNotNull(ERROR_MESSAGE);
+-        }).isInstanceOf(NullPointerException.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(null, SOME_STRING).isNotNull(ERROR_MESSAGE);
+-        }).isInstanceOf(NullPointerException.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(null, (Object[]) null).isNotNull(ERROR_MESSAGE);
+-        }).isInstanceOf(NullPointerException.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that((Object)null).isNotNull();
+-        }).isInstanceOf(NullPointerException.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(SOME_STRING, (Object)null).isNotNull();
+-        }).isInstanceOf(NullPointerException.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(null, SOME_STRING).isNotNull();
+-        }).isInstanceOf(NullPointerException.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(null, (Object[]) null).isNotNull();
+-        }).isInstanceOf(NullPointerException.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that((Object[])null).isNotEmpty(ERROR_MESSAGE);
+-        }).isInstanceOf(NullPointerException.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that((String)null).isNotEmpty(ERROR_MESSAGE);
+-        }).isInstanceOf(NullPointerException.class).hasMessage(ERROR_MESSAGE);
+-        assertThatThrownBy(() -> {
+-            Ensure.that((Object[])null).isNotEmpty();
+-        }).isInstanceOf(NullPointerException.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that((String)null).isNotEmpty();
+-        }).isInstanceOf(NullPointerException.class);
+-    }
+-
+-    /**
+-     * Checks whether we throw an exception if something is empty.
+-     */
+-    @Test
+-    void shouldThrowExceptionIfEmpty() {
+-        assertThatThrownBy(() -> {
+-            Ensure.that(new String[0]).isNotEmpty(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(Lists.newArrayList(EMPTY_STRING, null, EMPTY_STRING)).isNotEmpty(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(new String[]{EMPTY_STRING, null, EMPTY_STRING}).isNotEmpty(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(EMPTY_STRING).isNotEmpty(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(" ").isNotBlank(ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(EMPTY_STRING).isInstanceOf(Integer.class, ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(new String[0]).isNotEmpty();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(Lists.newArrayList(EMPTY_STRING, null, EMPTY_STRING)).isNotEmpty();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(new String[]{EMPTY_STRING, null, EMPTY_STRING}).isNotEmpty();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(EMPTY_STRING).isNotEmpty();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(" ").isNotBlank();
+-        }).isInstanceOf(AssertionError.class);
+-        assertThatThrownBy(() -> {
+-            Ensure.that(EMPTY_STRING).isInstanceOf(Integer.class, ERROR_MESSAGE);
+-        }).isInstanceOf(AssertionError.class);
+-    }
+-
+-    /**
+-     * Verifies that the message format is correctly interpreted.
+-     */
+-    @Test
+-    void shouldThrowExceptionWithCorrectMessage() {
+-        assertThatThrownBy(() -> {
+-            Ensure.that(EMPTY_STRING).isInstanceOf(Integer.class, "This error uses '%s' to print the number %d.", "String.format", 42);
+-        }).isInstanceOf(AssertionError.class).hasMessage("This error uses 'String.format' to print the number 42.");
+-    }
+-}
+\ No newline at end of file
+Index: src/test/java/edu/hm/hafner/util/TreeStringBuilderTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/TreeStringBuilderTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/TreeStringBuilderTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,118 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.util.ArrayList;
+-import java.util.List;
+-import java.util.Objects;
+-import java.util.Random;
+-
+-import org.junit.jupiter.api.Test;
+-
+-import static org.assertj.core.api.Assertions.*;
+-
+-/**
+- * Tests the class {@link TreeStringBuilder}.
+- *
+- * @author Kohsuke Kawaguchi
+- * @author Ullrich Hafner
+- */
+-class TreeStringBuilderTest {
+-    /** Creates several tree strings and checks that new tree strings will use the prefix of a previous one. */
+-    @Test
+-    @SuppressWarnings({"ConstantConditions", "NullAway"})
+-    void shouldCreateSimpleTreeStringsWithBuilder() {
+-        TreeStringBuilder builder = new TreeStringBuilder();
+-        TreeString foo = builder.intern("foo");
+-        assertThat(foo).hasToString("foo");
+-        assertThat(foo.getLabel()).isEqualTo("foo");
+-
+-        TreeString treeString = builder.intern("foo/bar/zot");
+-        assertThat(treeString).hasToString("foo/bar/zot");
+-        assertThat(treeString.getLabel()).isEqualTo("/bar/zot");
+-        assertThat(treeString.getParent()).isSameAs(foo);
+-
+-        TreeString interned = builder.intern(treeString);
+-        assertThat(interned).hasToString("foo/bar/zot");
+-        assertThat(interned.getLabel()).isEqualTo("/bar/zot");
+-
+-        assertThat(treeString).isSameAs(interned);
+-
+-        assertThat(builder.intern("")).hasToString("");
+-
+-        TreeString otherMiddleChild = builder.intern("foo/bar/xxx");
+-        assertThat(otherMiddleChild).hasToString("foo/bar/xxx");
+-        assertThat(otherMiddleChild.getLabel()).isEqualTo("xxx");
+-
+-        TreeString parent = otherMiddleChild.getParent();
+-        assertThat(parent).isSameAs(treeString.getParent());
+-        assertThat(Objects.requireNonNull(parent.getParent())).isSameAs(foo);
+-
+-        // middle node changed label but not toString
+-        assertThat(treeString.getLabel()).isEqualTo("zot");
+-        assertThat(treeString).hasToString("foo/bar/zot");
+-
+-        assertThat(builder.intern("").isBlank()).isTrue();
+-        assertThat(TreeString.valueOf("foo/bar/zot")).hasToString("foo/bar/zot");
+-    }
+-
+-    @Test
+-    void shouldProvideProperEqualsAndHashCode() {
+-        TreeStringBuilder builder = new TreeStringBuilder();
+-
+-        TreeString foo = builder.intern("foo");
+-        TreeString bar = builder.intern("foo/bar");
+-        TreeString zot = builder.intern("foo/bar/zot");
+-
+-        assertThat(new TreeStringBuilder().intern("foo")).isEqualTo(foo);
+-        assertThat(new TreeStringBuilder().intern("foo/bar")).isEqualTo(bar);
+-        assertThat(new TreeStringBuilder().intern("foo/bar/zot")).isEqualTo(zot);
+-
+-        assertThat(new TreeStringBuilder().intern("foo")).hasSameHashCodeAs(foo);
+-        assertThat(new TreeStringBuilder().intern("foo/bar")).hasSameHashCodeAs(bar);
+-        assertThat(new TreeStringBuilder().intern("foo/bar/zot")).hasSameHashCodeAs(zot);
+-    }
+-
+-    @Test
+-    void shouldThrowAssertionErrorIfLabelIsEmpty() {
+-        assertThatThrownBy(() -> new TreeString(new TreeString(), "")).isInstanceOf(AssertionError.class);
+-    }
+-
+-    /**
+-     * Pseudo random (but deterministic) test.
+-     */
+-    @Test
+-    void shouldCreateRandomTreeStrings() {
+-        String[] dictionary = {"aa", "b", "aba", "ba"};
+-        TreeStringBuilder builder = new TreeStringBuilder();
+-
+-        Random random = new Random(0);
+-
+-        List<String> a = new ArrayList<>();
+-        List<TreeString> o = new ArrayList<>();
+-
+-        for (int i = 0; i < 1000; i++) {
+-            StringBuilder b = new StringBuilder();
+-            for (int j = 0; j < random.nextInt(10) + 3; j++) {
+-                b.append(dictionary[random.nextInt(4)]);
+-            }
+-            String s = b.toString();
+-
+-            a.add(s);
+-
+-            TreeString p = builder.intern(s);
+-            assertThat(p).hasToString(s);
+-            o.add(p);
+-        }
+-
+-        // make sure values are still all intact
+-        for (int i = 0; i < a.size(); i++) {
+-            assertThat(o.get(i)).hasToString(a.get(i));
+-        }
+-
+-        builder.dedup();
+-
+-        // verify one more time
+-        for (int i = 0; i < a.size(); i++) {
+-            assertThat(o.get(i)).hasToString(a.get(i));
+-        }
+-    }
+-}
+Index: src/test/java/edu/hm/hafner/util/AbstractComparableTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/AbstractComparableTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/AbstractComparableTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,60 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import org.junit.jupiter.api.Test;
+-
+-import static org.assertj.core.api.Assertions.*;
+-
+-/**
+- * Verifies that comparable objects comply with the contract in {@link Comparable#compareTo(Object)}.
+- *
+- * @author Ullrich Hafner
+- * @param <T> the type of the subject under test
+- */
+-public abstract class AbstractComparableTest<T extends Comparable<T>> {
+-    /**
+-     * Verifies that a negative integer, zero, or a positive integer as this object is less than, equal to, or greater
+-     * than the specified object.
+-     */
+-    @Test
+-    @SuppressWarnings({"SelfComparison", "EqualsWithItself"})
+-    void shouldBeNegativeIfThisIsSmaller() {
+-        T smaller = createSmallerSut();
+-        T greater = createGreaterSut();
+-
+-        assertThat(smaller.compareTo(greater)).isNegative();
+-        assertThat(greater.compareTo(smaller)).isPositive();
+-
+-        assertThat(smaller.compareTo(smaller)).isZero();
+-        assertThat(greater.compareTo(greater)).isZero();
+-    }
+-
+-    /**
+-     * Verifies that {@code sgn(x.compareTo(y)) == -sgn(y.compareTo(x))} for all {@code x} and {@code y}.
+-     */
+-    @Test
+-    void shouldBeSymmetric() {
+-        T left = createSmallerSut();
+-        T right = createGreaterSut();
+-
+-        int leftCompareToResult = left.compareTo(right);
+-        int rightCompareToResult = right.compareTo(left);
+-
+-        assertThat(Integer.signum(leftCompareToResult)).isEqualTo(-Integer.signum(rightCompareToResult));
+-    }
+-
+-    /**
+-     * Creates a subject under test. The SUT must be smaller than the SUT of the opposite method {@link
+-     * #createGreaterSut()}.
+-     *
+-     * @return the SUT
+-     */
+-    protected abstract T createSmallerSut();
+-
+-    /**
+-     * Creates a subject under test. The SUT must be greater than the SUT of the opposite method {@link
+-     * #createSmallerSut()}.
+-     *
+-     * @return the SUT
+-     */
+-    protected abstract T createGreaterSut();
+-}
+Index: src/test/java/edu/hm/hafner/util/SerializableTest.java
+===================================================================
+--- src/test/java/edu/hm/hafner/util/SerializableTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
++++ src/test/java/edu/hm/hafner/util/SerializableTest.java	(revision 2439ab05401da9d753433e003227027c7ab4ae33)
+@@ -1,98 +0,0 @@
+-package edu.hm.hafner.util;
+-
+-import java.io.ByteArrayInputStream;
+-import java.io.ByteArrayOutputStream;
+-import java.io.IOException;
+-import java.io.ObjectInputStream;
+-import java.io.ObjectOutputStream;
+-import java.io.Serializable;
+-import java.nio.file.Files;
+-import java.nio.file.Paths;
+-import java.nio.file.StandardOpenOption;
+-
+-import org.junit.jupiter.api.DisplayName;
+-import org.junit.jupiter.api.Test;
+-
+-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+-
+-import static org.assertj.core.api.Assertions.*;
+-
+-/**
+- * Base class to test the serialization of instances of {@link Serializable}. Note that the instances under test must
+- * override equals so that the test case can check the serialized instances for equality.
+- *
+- * @param <T>
+- *         concrete type of the {@link Serializable} under test
+- *
+- * @author Ullrich Hafner
+- */
+-public abstract class SerializableTest<T extends Serializable> extends ResourceTest {
+-    /**
+-     * Factory method to create an instance of the {@link Serializable} under test. The instance returned by this method
+-     * will be serialized to a byte stream, deserialized into an object again, and finally compared to another instance
+-     * using {@link Object#equals(Object)}.
+-     *
+-     * @return the subject under test
+-     */
+-    protected abstract T createSerializable();
+-
+-    @Test
+-    @DisplayName("should be serializable: instance -> byte array -> instance")
+-    void shouldBeSerializable() {
+-        T serializableInstance = createSerializable();
+-
+-        byte[] bytes = toByteArray(serializableInstance);
+-
+-        assertThatSerializableCanBeRestoredFrom(bytes);
+-    }
+-
+-    /**
+-     * Resolves the subject under test from an array of bytes and compares the created instance with the original
+-     * subject under test.
+-     *
+-     * @param serializedInstance
+-     *         the byte stream of the serializable
+-     */
+-    protected void assertThatSerializableCanBeRestoredFrom(final byte... serializedInstance) {
+-        try (ObjectInputStream inputStream = new ObjectInputStream(new ByteArrayInputStream(serializedInstance))) {
+-            Object resolved = inputStream.readObject();
+-            assertThat(resolved).isEqualTo(createSerializable());
+-        }
+-        catch (IOException | ClassNotFoundException e) {
+-            throw new AssertionError("Can't resolve instance from byte array", e);
+-        }
+-    }
+-
+-    /**
+-     * Write the specified object to a byte array using an {@link ObjectOutputStream}. The class of the object, the
+-     * signature of the class, and the values of the non-transient and non-static fields of the class and all of its
+-     * supertypes are written. Objects referenced by this object are written transitively so that a complete equivalent
+-     * graph of objects can be reconstructed by an ObjectInputStream.
+-     *
+-     * @param object
+-     *         the object to serialize
+-     *
+-     * @return the object serialization
+-     */
+-    protected byte[] toByteArray(final Serializable object) {
+-        ByteArrayOutputStream out = new ByteArrayOutputStream();
+-        try (ObjectOutputStream stream = new ObjectOutputStream(out)) {
+-            stream.writeObject(object);
+-        }
+-        catch (IOException exception) {
+-            throw new IllegalStateException("Can't serialize object " + object, exception);
+-        }
+-        return out.toByteArray();
+-    }
+-
+-    /**
+-     * Serializes an issue using an {@link ObjectOutputStream } to the file /tmp/serializable.ser.
+-     *
+-     * @throws IOException
+-     *         if the file could not be created
+-     */
+-    @SuppressFBWarnings("DMI")
+-    protected void createSerializationFile() throws IOException {
+-        Files.write(Paths.get("/tmp/serializable.ser"), toByteArray(createSerializable()), StandardOpenOption.CREATE_NEW);
+-    }
+-}

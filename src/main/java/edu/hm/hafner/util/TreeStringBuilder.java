@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+
 /**
  * Builds {@link TreeString}s that share common prefixes. Call {@link #intern(String)} and you get the {@link
  * TreeString} that represents the same string, but as you interns more strings that share the same prefixes, those
@@ -82,7 +84,7 @@ public class TreeStringBuilder {
          *
          * @return the node
          */
-        public Child intern(final String string) {
+        public Child intern(String string) {
             if (string.isEmpty()) {
                 return this;
             }
@@ -134,8 +136,6 @@ public class TreeStringBuilder {
          *
          * @param prefix
          *         the prefix
-         *
-         * @return the node
          */
         private Child split(final String prefix) {
             String suffix = getNode().getLabel().substring(prefix.length());
@@ -144,7 +144,7 @@ public class TreeStringBuilder {
             middle.makeWritable();
             middle.children.put(suffix, this);
 
-            return middle;
+            return null;
         }
 
         /**
@@ -157,6 +157,7 @@ public class TreeStringBuilder {
          *
          * @return the prefix in characters
          */
+        @CheckForNull
         private int commonPrefix(final String a, final String b) {
             int m = Math.min(a.length(), b.length());
 
