@@ -18,8 +18,6 @@ import java.util.Map.Entry;
  * @author Kohsuke Kawaguchi
  */
 public class TreeStringBuilder {
-    private Child root = new Child(new TreeString());
-
     /**
      * Interns a string.
      *
