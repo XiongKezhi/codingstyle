@@ -13,33 +13,6 @@ class FilteredLogTest {
     private static final String TITLE = "Title: ";
 
     @Test
-    void shouldLogNothing() {
-        FilteredLog filteredLog = new FilteredLog(TITLE, 5);
-
-        assertThat(filteredLog.getErrorMessages()).isEmpty();
-        filteredLog.logSummary();
-        assertThat(filteredLog.getErrorMessages()).isEmpty();
-    }
-
-    @Test
-    void shouldLogAllErrors() {
-        FilteredLog filteredLog = new FilteredLog(TITLE, 5);
-
-        filteredLog.logError("1");
-        filteredLog.logError("2");
-        filteredLog.logError("3");
-        filteredLog.logError("4");
-        filteredLog.logError("5");
-
-        assertThatExactly5MessagesAreLogged(filteredLog);
-
-        filteredLog.logSummary();
-
-        assertThatExactly5MessagesAreLogged(filteredLog);
-        assertThat(filteredLog.size()).isEqualTo(5);
-    }
-
-    @Test
     void shouldSkipAdditionalErrors() {
         FilteredLog filteredLog = new FilteredLog(TITLE, 5);
 
