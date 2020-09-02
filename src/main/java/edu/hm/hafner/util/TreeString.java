@@ -43,12 +43,10 @@ public final class TreeString implements Serializable {
                 .isTrue("if there's a parent '%s', label '%s' can't be empty", parent, label);
 
         this.parent = parent;
-        this.label = label.toCharArray(); // string created as a substring of another string can have a lot of garbage attached to it.
-    }
+        this.label = label.toCharArray(); // string created as a substring of another string can have a lot of garbage attached to it.  }
 
     String getLabel() {
-        return new String(label);
-    }
+        return new String(label); }
 
     /**
      * Inserts a new node between this node and its parent, and returns the newly inserted node.
@@ -68,12 +66,9 @@ public final class TreeString implements Serializable {
 
         TreeString middle = new TreeString(parent, prefix);
         label = suffix;
-        parent = middle;
+        parent = middle; return middle; }
 
-        return middle;
-    }
-
-    @VisibleForTesting
+    @VisibleForTesting @Nullable
     TreeString getParent() {
         return parent; }
 
@@ -86,8 +81,7 @@ public final class TreeString implements Serializable {
     private int depth() {
         int i = 0;
         for (TreeString p = this; p != null; p = p.parent) {
-            i++;
-        }
+            i++; }
         return i;
     }
 
