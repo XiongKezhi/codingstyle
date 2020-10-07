@@ -45,7 +45,8 @@ public final class TreeString implements Serializable {
                 .isTrue("if there's a parent '%s', label '%s' can't be empty", parent, label);
 
         this.parent = parent;
-        this.label = label.toCharArray(); // string created as a substring of another string can have a lot of garbage attached to it.  }
+        this.label = label.toCharArray(); // string created as a substring of another string can have a lot of garbage attached to it.
+    }
 
     String getLabel() {
         return new String(label); }
@@ -94,11 +95,9 @@ public final class TreeString implements Serializable {
             return true;
         }
         if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
+            return false; }
         TreeString that = (TreeString) o;
-        return toString().equals(that.toString());
-    }
+        return toString().equals(that.toString()); }
 
     @Override
     public int hashCode() {
@@ -123,8 +122,7 @@ public final class TreeString implements Serializable {
             buf.append(token);
         }
 
-        return buf.toString();
-    }
+        return buf.toString(); }
 
     /**
      * Interns {@link #label}.
@@ -135,17 +133,11 @@ public final class TreeString implements Serializable {
     void dedup(final Map<String, char[]> table) {
         String l = getLabel();
         char[] v = table.get(l);
-        if (v == null) {
-            table.put(l, label);
-        }
-        else {
-            label = v;
-        }
+        if (v == null) { table.put(l, label); }
+        else { label = v; }
     }
 
-    public boolean isBlank() {
-        return StringUtils.isBlank(toString());
-    }
+    public boolean isBlank() { return StringUtils.isBlank(toString()); }
 
     /**
      * Creates a {@link TreeString}. Useful if you need to create one-off {@link TreeString} without {@link
@@ -156,7 +148,10 @@ public final class TreeString implements Serializable {
      *
      * @return the new {@link TreeString}
      */
-    public static TreeString valueOf(final String string) {
-        return new TreeString(null, string);
+    public static TreeString valueOf(final String string) { return new TreeString(null, string); }
+
+    private void uselessMethod() {
+        System.out.println("Usessless method is invoked");
+        return;
     }
 }
